@@ -1,0 +1,30 @@
+{
+  "repo": "datonko-gi/claude-usage-widget",
+  "description": "Claude usage widget for Windows 10 and 11: a small desktop widget that shows your Claude Code 5-hour limit and weekly limit with traffic-light bars and reset countdowns. Rate limit monitor in PowerShell, no install, no admin rights.",
+  "topics": [
+    "claude-code",
+    "claude",
+    "claude-usage",
+    "claude-ai",
+    "usage-monitor",
+    "usage-limits",
+    "rate-limit",
+    "rate-limit-monitor",
+    "anthropic",
+    "desktop-widget",
+    "widget",
+    "windows-11",
+    "windows-10",
+    "windows",
+    "powershell",
+    "winforms",
+    "productivity",
+    "developer-tools",
+    "ai-tools",
+    "monitoring"
+  ],
+  "release_tag": "v1.0.0",
+  "release_title": "Claude Usage Widget 1.0.0",
+  "release_notes": "First public release of Claude Usage Widget, a desktop widget for Windows 10 and 11 that shows your Claude Code 5-hour and weekly usage limits.\n\n- Two bars with percent used and a countdown to each reset (blue under 60%, amber from 60%, red from 85%).\n- Signed-out state with one-click `claude auth login`.\n- Slow, rate-limit-friendly polling with backoff.\n- Reads the Claude Code login read-only and talks only to api.anthropic.com. Unofficial and not affiliated with Anthropic; the endpoint it reads is undocumented.\n\nInstall: unzip anywhere, run `install.bat`. Needs Claude Code signed in with a Pro or Max account.",
+  "release_zip": "claude-usage-widget-v1.0.0.zip"
+}

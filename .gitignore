@@ -1,0 +1,13 @@
+# Runtime state lives in %APPDATA%\ClaudeUsage, never in the repo
+data.json
+usage_cache.json
+*.log
+
+# Local backups and build output
+*.bak*
+dist/
+*.zip
+
+# OS cruft
+Thumbs.db
+desktop.ini
