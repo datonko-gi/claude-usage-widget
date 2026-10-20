@@ -15,8 +15,10 @@ Claude Usage Widget is a small desktop widget for Windows 10 and Windows 11 that
 - A small dot in the top-right corner tells you about the data: red means signed out or token problem, amber means a network or rate-limit error (the last good numbers stay on screen), grey means the data is more than 8 minutes old. No dot means fresh and healthy.
 - When your Claude Code login has expired, the widget says so and one click opens the sign-in.
 - Polls slowly on purpose (about every 2 minutes while you work, less when idle), because the endpoint rate-limits.
+- Scales with Windows display scaling: the layout is drawn in design pixels and looks the same at 100%, 125%, 150%, 175% and 200%. The scale is read when the widget starts, so restart the widget after you change the setting.
+- When the API sends no reset time yet (a new account, or an idle 5-hour window), the bar is shown without a countdown.
 - Sits below all windows, stays out of the taskbar and Alt-Tab, never takes focus, remembers its position.
-- One file of about 700 lines of PowerShell. Easy to read before you run it.
+- One file of about 750 lines of PowerShell. Easy to read before you run it.
 
 ## States
 
@@ -73,6 +75,7 @@ To change colors, thresholds or polling, edit `claude_usage.ps1`: `Bar-Color` an
 - The access token lasts a few hours and Claude Code refreshes it when you use it. If the widget gets a 401 while a refresh token still exists, it starts `claude -p --model claude-haiku-4-5-20251001 OK` hidden, at most once every 15 minutes, so the CLI refreshes and saves its own token. The widget never writes the credentials file. That call is a real, tiny request and counts toward your usage.
 - The Claude Code login expires after about a month. Then the CLI wipes its tokens and the widget shows "signed out". It stops polling (one slow check every 10 minutes at most) and picks up the new login as soon as the credentials file changes.
 - The window is a borderless WinForms form with the `WS_EX_NOACTIVATE` and `WS_EX_TOOLWINDOW` styles, pushed to the bottom of the z-order and sunk again whenever something raises it. Rounded corners come from a window region.
+- Display scaling: all drawing is done in design pixels (168 by 60 at 100%). The form size, the fonts and the Graphics are multiplied by the system DPI divided by 96, so nothing is laid out in fixed physical pixels.
 - Single instance: a second launch checks for a running widget and a named mutex, then exits.
 
 ## Privacy
@@ -92,7 +95,7 @@ Run `uninstall.bat`. It removes the Startup shortcut and stops the widget. Then 
 - **The widget says "signed out".** The Claude Code login has expired (it lasts about a month) or Claude Code is not signed in with a Claude account. Click the widget, finish `claude auth login` in the browser, and the numbers come back on their own.
 - **Clicking "click: sign in" does nothing.** The widget looks for `%USERPROFILE%\.local\bin\claude.exe` and then for `claude` on your PATH. If neither exists, `widget.log` says `claude.exe not found`. Install Claude Code or add it to PATH, then restart the widget.
 - **Amber dot, numbers not moving.** The endpoint answered 429 or the network is down. The widget keeps the last good numbers and backs off for 5 to 30 minutes. `widget.log` has the reason. Avoid clicking repeatedly while the dot is amber: a manual refresh still goes out once a minute during the backoff, which can prolong a rate limit.
-- **Text looks crowded on a scaled display.** The layout is drawn in physical pixels and was tuned for 100% display scaling. At 125% and above the text grows while the widget stays 168 by 60 pixels, so a weekly countdown such as `3d 11h` can touch the percentage. It is cosmetic.
+- **A bar without a countdown.** The API sent no reset time for that limit, which happens on a new account or while no 5-hour window is running. The percentage is still shown. The countdown appears as soon as the API reports a reset time.
 
 ## More widgets
 

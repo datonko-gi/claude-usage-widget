@@ -8,5 +8,7 @@ First public release.
 - Reads the limits from the Claude Code login already stored on the PC (read-only), with slow, rate-limit-friendly polling and backoff after errors.
 - Signed-out state with one-click `claude auth login`.
 - Status dot for token problems, network or rate-limit errors, and stale data.
+- Scales with Windows display scaling (100% to 200%): geometry and fonts are drawn in design pixels and multiplied by DPI/96.
+- A missing or null reset time from the API shows the bar without a countdown instead of an error.
 - English UI. Finds `claude` at `%USERPROFILE%\.local\bin\claude.exe` or on PATH.
 - `install.bat` and `uninstall.bat` work from any folder, including one with an apostrophe in its name.

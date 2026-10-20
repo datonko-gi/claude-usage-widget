@@ -104,10 +104,21 @@ public class IdleHelper {
 
 [Native]::SetProcessDPIAware() | Out-Null
 
-# ===== Geometry (physical px; DPI-aware) =====
-$script:FormW = 168
-$script:FormH = 60
-$script:PadL  = 9
+# ===== Geometry =====
+# All drawing code works in "design" pixels: a 168x60 card at 100% display scaling. The form is the design
+# size times the Windows display scale (DPI/96; this process is DPI-aware), and the Paint handler applies the
+# same scale to the Graphics, so the layout is identical at 100%, 125%, 150%, 175% and 200%.
+$script:DesignW = 168
+$script:DesignH = 60
+$script:Scale = 1.0
+try {
+    $gd = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero)
+    $script:Scale = [Math]::Max(1.0, [Math]::Round($gd.DpiX / 96.0, 2))
+    $gd.Dispose()
+} catch {}
+$script:FormW = [int][Math]::Round($script:DesignW * $script:Scale)   # physical px
+$script:FormH = [int][Math]::Round($script:DesignH * $script:Scale)
+$script:PadL  = 9   # design px
 $script:PadR  = 8
 
 # ===== Colors (light card, traffic-light bars) =====
@@ -181,6 +192,13 @@ $script:FetchScript = {
     param($state, $credFile, $cacheFile, $apiUrl)
     if (-not $apiUrl) { $apiUrl = 'https://api.anthropic.com/api/oauth/usage' }
     $state.errMsg = $null
+    function ConvertTo-ResetUtc($v) {
+        # null or empty reset time -> $null: the bar is still shown, just without a countdown.
+        # A value that is present but not a date still throws (reported as an error), so an API format change stays visible.
+        if ($null -eq $v -or "$v".Trim() -eq '') { return $null }
+        if ($v -is [DateTime]) { return $v.ToUniversalTime() }
+        return [DateTime]::Parse([string]$v).ToUniversalTime()
+    }
     # --- credentials: decide up front whether the CLI could still refresh on its own ---
     # refreshTokenExpiresAt is an ABSOLUTE lifetime (~30 days from login). Once it passes the
     # CLI wipes both tokens, so an empty/expired refresh token
@@ -224,19 +242,19 @@ $script:FetchScript = {
         $sPct = $null; $wPct = $null; $sReset = $null; $wReset = $null
         if ($r.PSObject.Properties.Name -contains 'limits' -and $r.limits) {
             foreach ($L in $r.limits) {
-                if ($L.kind -eq 'session')        { $sPct = [double]$L.percent; $sReset = [DateTime]::Parse($L.resets_at).ToUniversalTime() }
-                elseif ($L.kind -eq 'weekly_all') { $wPct = [double]$L.percent; $wReset = [DateTime]::Parse($L.resets_at).ToUniversalTime() }
+                if ($L.kind -eq 'session')        { $sPct = [double]$L.percent; $sReset = ConvertTo-ResetUtc $L.resets_at }
+                elseif ($L.kind -eq 'weekly_all') { $wPct = [double]$L.percent; $wReset = ConvertTo-ResetUtc $L.resets_at }
             }
         }
-        if ($null -eq $sPct -and $r.five_hour) { $sPct = [double]$r.five_hour.utilization; $sReset = [DateTime]::Parse($r.five_hour.resets_at).ToUniversalTime() }
-        if ($null -eq $wPct -and $r.seven_day) { $wPct = [double]$r.seven_day.utilization; $wReset = [DateTime]::Parse($r.seven_day.resets_at).ToUniversalTime() }
+        if ($null -eq $sPct -and $r.five_hour) { $sPct = [double]$r.five_hour.utilization; $sReset = ConvertTo-ResetUtc $r.five_hour.resets_at }
+        if ($null -eq $wPct -and $r.seven_day) { $wPct = [double]$r.seven_day.utilization; $wReset = ConvertTo-ResetUtc $r.seven_day.resets_at }
         if ($null -eq $sPct -and $null -eq $wPct) { throw 'response had neither limits[] nor five_hour/seven_day' }
         $now = [DateTime]::UtcNow
         $state.sPct = $sPct; $state.wPct = $wPct
         $state.sReset = $sReset; $state.wReset = $wReset
         $state.err = $null; $state.ok = $true; $state.ts = $now
         try {
-            @{ sPct = $sPct; wPct = $wPct; sReset = $sReset.ToString('o'); wReset = $wReset.ToString('o'); ts = $now.ToString('o') } |
+            @{ sPct = $sPct; wPct = $wPct; sReset = $(if ($sReset) { $sReset.ToString('o') } else { $null }); wReset = $(if ($wReset) { $wReset.ToString('o') } else { $null }); ts = $now.ToString('o') } |
                 ConvertTo-Json -Compress | Set-Content $cacheFile -Encoding UTF8
         } catch {}
     } catch {
@@ -363,8 +381,8 @@ $form.Text = "ClaudeUsage"
 # Default position: bottom-right corner of the primary screen, above the taskbar.
 function Default-Location {
     $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $x = $wa.Right - $script:FormW - 24
-    $y = $wa.Bottom - $script:FormH - 24
+    $x = $wa.Right - $script:FormW - [int](24 * $script:Scale)
+    $y = $wa.Bottom - $script:FormH - [int](24 * $script:Scale)
     return New-Object System.Drawing.Point([int]$x, [int]$y)
 }
 function Test-OnScreen($x, $y) {
@@ -395,7 +413,7 @@ function Draw-Row {
     #  label 8..32 | bar 34..70 | percent 72..106 | countdown 108..160
     $barX = 34; $barRight = 70
     $pctX = 72;  $pctRight = 106
-    $cdX  = 108; $cdRight  = $script:FormW - $script:PadR
+    $cdX  = 108; $cdRight  = $script:DesignW - $script:PadR
     $barW = $barRight - $barX
 
     $vc = New-Object System.Drawing.StringFormat
@@ -437,7 +455,7 @@ function Draw-Row {
 
     $cd = ""
     if ($reset -is [DateTime]) { $cd = if ($long) { Fmt-Long $reset } else { Fmt-Short $reset } }
-    $exhausted = ($pct -ge 100)
+    $exhausted = ($pct -ge 100) -and ($cd -ne "")   # no reset time known -> keep the percent, no countdown
     if ($exhausted) {
         # percent slot merges into the countdown: one big red "reset in N"
         $rb = New-Object System.Drawing.SolidBrush($script:ColRedD)
@@ -447,9 +465,11 @@ function Draw-Row {
         $pb = New-Object System.Drawing.SolidBrush((Text-Color $pct))
         $pRect = New-Object System.Drawing.RectangleF ([float]$pctX, [float]$y, [float]($pctRight - $pctX), [float]$barH)
         $g.DrawString(("{0}%" -f [int][Math]::Round($pct)), $fVal, $pb, $pRect, $fmtR); $pb.Dispose()
-        $cb = New-Object System.Drawing.SolidBrush($script:ColMuted)
-        $cRect = New-Object System.Drawing.RectangleF ([float]$cdX, [float]$y, [float]($cdRight - $cdX), [float]$barH)
-        $g.DrawString(("$([char]0x21BB) $cd"), $fLabel, $cb, $cRect, $fmtR); $cb.Dispose()
+        if ($cd -ne "") {
+            $cb = New-Object System.Drawing.SolidBrush($script:ColMuted)
+            $cRect = New-Object System.Drawing.RectangleF ([float]$cdX, [float]$y, [float]($cdRight - $cdX), [float]$barH)
+            $g.DrawString(("$([char]0x21BB) $cd"), $fLabel, $cb, $cRect, $fmtR); $cb.Dispose()
+        }
     }
     $fmtR.Dispose(); $vc.Dispose()
 }
@@ -475,10 +495,12 @@ $panel.Add_Paint({
         $g = $e.Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+        $g.ScaleTransform([float]$script:Scale, [float]$script:Scale)   # draw in design px
 
-        $fLabel = New-Object System.Drawing.Font("Segoe UI", 7.5, [System.Drawing.FontStyle]::Bold)
-        $fBig   = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $fSmall = New-Object System.Drawing.Font("Segoe UI", 7.5, [System.Drawing.FontStyle]::Bold)
+        # sizes in design pixels (10 px = 7.5 pt and 12 px = 9 pt at 96 dpi); the transform scales them
+        $fLabel = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+        $fBig   = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+        $fSmall = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
 
         $u = $script:Usage
         if ($u.err -eq 'login') {
@@ -502,7 +524,7 @@ $panel.Add_Paint({
         elseif ($ageSec -gt 480) { $dotCol = $script:ColMuted }
         if ($dotCol) {
             $d = New-Object System.Drawing.SolidBrush($dotCol)
-            $g.FillEllipse($d, $script:FormW - 7, 3, 4, 4); $d.Dispose()
+            $g.FillEllipse($d, $script:DesignW - 7, 3, 4, 4); $d.Dispose()
         }
 
         $fLabel.Dispose(); $fBig.Dispose(); $fSmall.Dispose()
@@ -584,7 +606,8 @@ $form.Add_Shown({
         # region coords are physical px 1:1, so the rounded rect lines up exactly.
         # Intentionally NOT calling DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE) here:
         # corners must come from the region only, never from DWM.
-        $rgn = [Native]::CreateRoundRectRgn(0, 0, $script:FormW + 1, $script:FormH + 1, 14, 14)
+        $rr14 = [int][Math]::Round(14 * $script:Scale)
+        $rgn = [Native]::CreateRoundRectRgn(0, 0, $script:FormW + 1, $script:FormH + 1, $rr14, $rr14)
         [Native]::SetWindowRgn($h, $rgn, $true) | Out-Null
         Sink-ToBottom
         Write-WidgetLog "shown; region shadow-kill + rounded corners applied"
