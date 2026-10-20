@@ -216,8 +216,10 @@ $script:FetchScript = {
             if ($rtExpMs -gt 0 -and $rtExpMs -lt [double]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())) { $canRefresh = $false }
         }
     } catch {
+        # Never put the exception message in errMsg (it goes to widget.log): on Windows PowerShell 5.1 a JSON
+        # parse error echoes the file content, tokens included. A fixed string plus the exception type name only.
         $state.err = 'login'; $state.ok = $false
-        $state.errMsg = "credentials unreadable: $($_.Exception.Message)"
+        $state.errMsg = "credentials unreadable (read or parse error: $($_.Exception.GetType().Name))"
         return
     }
     if ($tok.Length -eq 0) {
@@ -259,6 +261,8 @@ $script:FetchScript = {
         } catch {}
     } catch {
         $msg = $_.Exception.Message
+        # Belt and braces: the request carries the bearer token, so scrub that exact value from anything that gets logged.
+        if ($tok.Length -gt 0) { $msg = $msg.Replace($tok, '[token]') }
         $state.errMsg = $msg
         if ($msg -match '429' -or $msg -match 'Too Many') { $state.err = 'rate' }
         elseif ($msg -match '401' -or $msg -match 'Unauthorized') { $state.err = if ($canRefresh) { 'auth' } else { 'login' } }
@@ -663,7 +667,7 @@ $timer.Add_Tick({
             $script:LastAuthRefresh = $now
             try {
                 if (Test-Path $script:ClaudeExe) {
-                    Start-Process -FilePath $script:ClaudeExe -ArgumentList '-p','--model','claude-haiku-4-5-20251001','OK' -WindowStyle Hidden
+                    Start-Process -FilePath $script:ClaudeExe -ArgumentList '-p','--model','haiku','OK' -WindowStyle Hidden
                     Write-WidgetLog "token expired -> triggered claude.exe refresh"
                 }
             } catch { Write-WidgetLog "claude.exe refresh failed: $($_.Exception.Message)" }
