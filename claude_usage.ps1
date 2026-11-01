@@ -1,5 +1,5 @@
-﻿# Claude Usage Widget. Two rows: 5-hour session (big) + weekly all-models (small).
-# Traffic-light bars, percent, and time-to-reset. Data: GET https://api.anthropic.com/api/oauth/usage
+﻿# Claude Usage Widget. Two rows: 5-hour session (big) + weekly all-models (small); weekly only when
+# the API reports no 5-hour limit for the account. Traffic-light bars, percent, and time-to-reset. Data: GET https://api.anthropic.com/api/oauth/usage
 # (an UNDOCUMENTED endpoint that may change or disappear) with the Claude Code OAuth bearer token
 # from ~/.claude/.credentials.json (read-only; token freshness delegated to the CLI).
 # Not affiliated with or endorsed by Anthropic.
@@ -120,6 +120,22 @@ $script:FormW = [int][Math]::Round($script:DesignW * $script:Scale)   # physical
 $script:FormH = [int][Math]::Round($script:DesignH * $script:Scale)
 $script:PadL  = 9   # design px
 $script:PadR  = 8
+# One-row layout, for accounts the API reports no 5-hour limit for: the lower CompactH design px of the
+# card stay visible, so the bottom edge does not move. The form keeps its full size and only the window
+# region shrinks: Windows clamps a window to SM_CYMINTRACK (47 px at 125%), so a smaller form is not possible.
+$script:CompactH    = 28
+$script:CompactRowY = 41
+$script:CompactRowH = 11
+function Test-ShowSessionRow($u) {
+    # Signed out needs both rows for its two messages. With no data at all yet, use the Pro and Max layout.
+    if ($u.err -eq 'login') { return $true }
+    return ($null -ne $u.sPct -or $null -eq $u.wPct)
+}
+function Get-VisibleTop([bool]$showSession) {
+    # Physical y where the visible part of the window starts.
+    if ($showSession) { return 0 }
+    return $script:FormH - [int][Math]::Round($script:CompactH * $script:Scale)
+}
 
 # ===== Colors (light card, traffic-light bars) =====
 function C($r,$g,$b) { [System.Drawing.Color]::FromArgb($r,$g,$b) }
@@ -175,7 +191,9 @@ if (Test-Path $script:CacheFile) {
     try {
         $c = Get-Content $script:CacheFile -Raw | ConvertFrom-Json
         $script:Usage.ok = $true
-        $script:Usage.sPct = [double]$c.sPct; $script:Usage.wPct = [double]$c.wPct
+        # null stays null: [double]$null is 0, which would paint a 0% row for a limit the account does not have.
+        if ($null -ne $c.sPct) { $script:Usage.sPct = [double]$c.sPct }
+        if ($null -ne $c.wPct) { $script:Usage.wPct = [double]$c.wPct }
         if ($c.sReset) { $script:Usage.sReset = ([DateTime]::Parse($c.sReset)).ToUniversalTime() }
         if ($c.wReset) { $script:Usage.wReset = ([DateTime]::Parse($c.wReset)).ToUniversalTime() }
         if ($c.ts) { $script:Usage.ts = ([DateTime]::Parse($c.ts)).ToUniversalTime() }
@@ -240,17 +258,20 @@ $script:FetchScript = {
         # -> "Current session", kind=weekly_all -> "All models"). The legacy top-level
         # five_hour/seven_day.utilization diverged from the page under the Max (20x) plan,
         # so limits[] is authoritative; fall back to the
-        # legacy fields only if limits[] is absent.
+        # legacy field of a limit only if limits[] has no number for it. An account with no 5-hour
+        # limit has no session entry and five_hour=null, so sPct stays null.
+        # A null value is no limit: [double]$null would turn it into 0%.
         $sPct = $null; $wPct = $null; $sReset = $null; $wReset = $null
         if ($r.PSObject.Properties.Name -contains 'limits' -and $r.limits) {
             foreach ($L in $r.limits) {
+                if ($null -eq $L.percent) { continue }
                 if ($L.kind -eq 'session')        { $sPct = [double]$L.percent; $sReset = ConvertTo-ResetUtc $L.resets_at }
                 elseif ($L.kind -eq 'weekly_all') { $wPct = [double]$L.percent; $wReset = ConvertTo-ResetUtc $L.resets_at }
             }
         }
-        if ($null -eq $sPct -and $r.five_hour) { $sPct = [double]$r.five_hour.utilization; $sReset = ConvertTo-ResetUtc $r.five_hour.resets_at }
-        if ($null -eq $wPct -and $r.seven_day) { $wPct = [double]$r.seven_day.utilization; $wReset = ConvertTo-ResetUtc $r.seven_day.resets_at }
-        if ($null -eq $sPct -and $null -eq $wPct) { throw 'response had neither limits[] nor five_hour/seven_day' }
+        if ($null -eq $sPct -and $r.five_hour -and $null -ne $r.five_hour.utilization) { $sPct = [double]$r.five_hour.utilization; $sReset = ConvertTo-ResetUtc $r.five_hour.resets_at }
+        if ($null -eq $wPct -and $r.seven_day -and $null -ne $r.seven_day.utilization) { $wPct = [double]$r.seven_day.utilization; $wReset = ConvertTo-ResetUtc $r.seven_day.resets_at }
+        if ($null -eq $sPct -and $null -eq $wPct) { throw 'response had no percent in limits[] or five_hour/seven_day' }
         $now = [DateTime]::UtcNow
         $state.sPct = $sPct; $state.wPct = $wPct
         $state.sReset = $sReset; $state.wReset = $wReset
@@ -393,7 +414,7 @@ function Test-OnScreen($x, $y) {
     foreach ($s in [System.Windows.Forms.Screen]::AllScreens) {
         $wa = $s.WorkingArea
         if (($x + $script:FormW) -gt ($wa.Left + 40) -and $x -lt ($wa.Right - 40) -and
-            ($y + $script:FormH) -gt ($wa.Top + 20) -and $y -lt ($wa.Bottom - 20)) { return $true }
+            ($y + $script:FormH) -gt ($wa.Top + 20) -and ($y + (Get-VisibleTop (Test-ShowSessionRow $script:Usage))) -lt ($wa.Bottom - 20)) { return $true }
     }
     return $false
 }
@@ -514,8 +535,12 @@ $panel.Add_Paint({
             Draw-Row $g 37 11 "wk" $fLabel $fSmall $null $null $true  "click: sign in" $script:ColMuted
         } else {
             $sP = $u.sPct; $wP = $u.wPct
-            Draw-Row $g 12 15 "5h"  $fLabel $fBig   $sP $u.sReset $false
-            Draw-Row $g 37 11 "wk" $fLabel $fSmall $wP $u.wReset $true
+            if (Test-ShowSessionRow $u) {
+                Draw-Row $g 12 15 "5h"  $fLabel $fBig   $sP $u.sReset $false
+                Draw-Row $g 37 11 "wk" $fLabel $fSmall $wP $u.wReset $true
+            } else {
+                Draw-Row $g $script:CompactRowY $script:CompactRowH "wk" $fLabel $fSmall $wP $u.wReset $true
+            }
         }
 
         # top-right status dot: red = token expired, amber = net/rate error, gray = data is stale
@@ -528,7 +553,8 @@ $panel.Add_Paint({
         elseif ($ageSec -gt 480) { $dotCol = $script:ColMuted }
         if ($dotCol) {
             $d = New-Object System.Drawing.SolidBrush($dotCol)
-            $g.FillEllipse($d, $script:DesignW - 7, 3, 4, 4); $d.Dispose()
+            $dotY = if (Test-ShowSessionRow $u) { 3 } else { $script:DesignH - $script:CompactH + 3 }
+            $g.FillEllipse($d, $script:DesignW - 7, $dotY, 4, 4); $d.Dispose()
         }
 
         $fLabel.Dispose(); $fBig.Dispose(); $fSmall.Dispose()
@@ -599,20 +625,30 @@ function Sink-ToBottom {
         [Native]::SWP_NOMOVE -bor [Native]::SWP_NOSIZE -bor [Native]::SWP_NOACTIVATE) | Out-Null
 }
 
+# SetWindowRgn kills the DWM drop shadow (A/B capture proved layered/opacity does NOT, while a window
+# region does) and supplies the rounded corners, alone. DPI-aware window -> region coords are physical
+# px 1:1, so the rounded rect lines up exactly. It also sets the visible height: clicks outside the
+# region pass through. Rebuilt only when the row layout changes; the system owns the region handle.
+$script:ShapeTop = -1
+function Update-WindowShape {
+    $top = Get-VisibleTop (Test-ShowSessionRow $script:Usage)
+    if ($top -eq $script:ShapeTop) { return }
+    $rr14 = [int][Math]::Round(14 * $script:Scale)
+    $rgn = [Native]::CreateRoundRectRgn(0, $top, $script:FormW + 1, $script:FormH + 1, $rr14, $rr14)
+    [Native]::SetWindowRgn($form.Handle, $rgn, $true) | Out-Null
+    $script:ShapeTop = $top
+    Write-WidgetLog ("window region: top={0} of {1} px" -f $top, $script:FormH)
+}
+
 $form.Add_Shown({
     try {
         $h = $form.Handle
         $ex = [Native]::GetWindowLong($h, [Native]::GWL_EXSTYLE)
         [Native]::SetWindowLong($h, [Native]::GWL_EXSTYLE,
             $ex -bor [Native]::WS_EX_NOACTIVATE -bor [Native]::WS_EX_TOOLWINDOW) | Out-Null
-        # SetWindowRgn kills the DWM drop shadow (A/B capture proved layered/opacity does NOT,
-        # while a window region does) and supplies the rounded corners, alone. DPI-aware window ->
-        # region coords are physical px 1:1, so the rounded rect lines up exactly.
         # Intentionally NOT calling DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE) here:
         # corners must come from the region only, never from DWM.
-        $rr14 = [int][Math]::Round(14 * $script:Scale)
-        $rgn = [Native]::CreateRoundRectRgn(0, 0, $script:FormW + 1, $script:FormH + 1, $rr14, $rr14)
-        [Native]::SetWindowRgn($h, $rgn, $true) | Out-Null
+        Update-WindowShape
         Sink-ToBottom
         Write-WidgetLog "shown; region shadow-kill + rounded corners applied"
     } catch { Write-WidgetLog "Shown: $($_.Exception.Message)" }
@@ -642,7 +678,7 @@ $timer.Add_Tick({
         if (Reap-Fetch) {
             $e = $script:Usage.err
             if ($null -eq $e) {
-                if ($script:LastErr) { Write-WidgetLog ("fetch ok after err={0}: 5h={1}% week={2}%" -f $script:LastErr, $script:Usage.sPct, $script:Usage.wPct) }
+                if ($script:LastErr) { Write-WidgetLog ("fetch ok after err={0}: 5h={1} week={2}%" -f $script:LastErr, $(if ($null -ne $script:Usage.sPct) { "$($script:Usage.sPct)%" } else { 'none' }), $script:Usage.wPct) }
                 $script:Backoff = 0
             } elseif ($e -eq 'login') {
                 # Logged out. Usually no request was even made; if one was, the token is dead for
@@ -658,6 +694,7 @@ $timer.Add_Tick({
             $script:LastErr = $e
             $panel.Invalidate()
         }
+        Update-WindowShape   # after Reap-Fetch, whose watchdog can change err as well
 
         # Token expired (401): the widget must NOT rewrite the shared credentials (rotating the
         # refresh token can break the CLI), so trigger the OFFICIAL CLI once to refresh+persist it.
