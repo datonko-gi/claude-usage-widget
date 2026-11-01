@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.1
 
-- Accounts the API reports no 5-hour limit for get one weekly row in a smaller card, switching live in both directions.
+- When the API reports no 5-hour limit for an account, the widget shows one weekly row in a smaller card, switching live in both directions.
 - A null percent or utilization no longer shows as a 0% row, and neither does a cached null after a restart.
 
 ## 1.0.0

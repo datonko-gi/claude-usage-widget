@@ -1,6 +1,6 @@
 # Claude Usage Widget for Windows
 
-Claude Usage Widget is a small desktop widget for Windows 10 and Windows 11 that shows your Claude Code usage limits at a glance: the 5-hour limit and the weekly limit, each with a bar, the percent used and a countdown to its reset. Accounts the API reports no 5-hour limit for get the weekly limit alone in a smaller card. It works as a rate limit monitor for people on a Claude subscription such as Pro or Max, so you can see how close you are to a limit without opening the usage page. It runs as plain PowerShell, sits below all your windows, and needs no installer and no admin rights.
+Claude Usage Widget is a small desktop widget for Windows 10 and Windows 11 that shows your Claude Code usage limits at a glance: the 5-hour limit and the weekly limit, each with a bar, the percent used and a countdown to its reset. When the API reports no 5-hour limit for your account, you get the weekly limit alone in a smaller card. It works as a rate limit monitor for people on a Claude subscription such as Pro or Max, so you can see how close you are to a limit without opening the usage page. It runs as plain PowerShell, sits below all your windows, and needs no installer and no admin rights.
 
 ![Claude Usage Widget showing the 5-hour and weekly limits](docs/screenshot.png)
 

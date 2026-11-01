@@ -23,8 +23,8 @@
     "ai-tools",
     "monitoring"
   ],
-  "release_tag": "v1.0.0",
-  "release_title": "Claude Usage Widget 1.0.0",
-  "release_notes": "First public release of Claude Usage Widget, a desktop widget for Windows 10 and 11 that shows your Claude Code 5-hour and weekly usage limits.\n\n- Two bars with percent used and a countdown to each reset (blue under 60%, amber from 60%, red from 85%).\n- Signed-out state with one-click `claude auth login`.\n- Slow, rate-limit-friendly polling with backoff.\n- Reads the Claude Code login read-only and talks only to api.anthropic.com. Unofficial and not affiliated with Anthropic; the endpoint it reads is undocumented.\n\nInstall: unzip anywhere, run `install.bat`. Needs Claude Code signed in with a Pro or Max account.",
-  "release_zip": "claude-usage-widget-v1.0.0.zip"
+  "release_tag": "v1.0.1",
+  "release_title": "Claude Usage Widget 1.0.1",
+  "release_notes": "Support for accounts without a 5-hour limit.\n\n- When the API reports no 5-hour limit for your account, the widget shows the weekly bar alone in a smaller card. It goes back to two bars if the API reports the limit again. Before this release the 5-hour row stayed on screen with \"no data\".\n- A null value from the API or in the local cache no longer shows as a 0% row.\n\nTo update: right-click the widget, choose Close widget, replace the files in its folder with the ones from this ZIP, then run `install.bat`.\n\nNew install: unzip anywhere, run `install.bat`. Needs Claude Code signed in with a Claude subscription account such as Pro or Max.",
+  "release_zip": "claude-usage-widget-v1.0.1.zip"
 }
